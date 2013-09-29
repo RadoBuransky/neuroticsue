@@ -8,15 +8,13 @@ import play.api.libs.json.Json
 import play.api.libs.json.JsResult
 import play.api.libs.json.JsError
 import models.NeuroticSueService
-import models.NeuroticResult
-import models.NeuroticResult
 
 object NeuroticSueController extends Controller {  
   /**
    * GET method to check the URL for any changes compared to the
    * provided baseline. 
    */
-  def check(url: String, baseline: Option[String] = None) = Action {
+  def check(url: String, baseline: Option[String] = None) = Action { implicit request =>
     try {
 	    // Validate input
       val validationResult = validate(url, baseline);
@@ -34,11 +32,11 @@ object NeuroticSueController extends Controller {
       	    case Some(baseline) => NeuroticSueService.hasChanged(parsedUrl, baseline)
       	    
       	    // This is the first call, so get the baseline
-      	    case None => NeuroticSueService.getBaseline(parsedUrl)
+      	    case None => NeuroticSueService.getBaseline(parsedUrl, request.remoteAddress)
       	  }
       	  
       	  // Serialize to JSON and return result
-      	  Ok(neuroticResultToJson(neuroticResult))
+      	  Ok
       	}
 	    }
     }
@@ -50,10 +48,10 @@ object NeuroticSueController extends Controller {
     }
   }
   
-  private def neuroticResultToJson(neuroticResult: NeuroticResult): JsObject = {
-    Json.obj("hasChanged" -> neuroticResult.hasChanged,
-        "baseline" -> neuroticResult.baseline)
-  }
+//  private def neuroticResultToJson(neuroticResult: NeuroticResult): JsObject = {
+//    Json.obj("hasChanged" -> neuroticResult.hasChanged,
+//        "baseline" -> neuroticResult.baseline)
+//  }
     
   private def validate(url: String, baseline: Option[String]): Option[String] = {
     if (url == null || url.isEmpty()) {
