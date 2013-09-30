@@ -1,19 +1,28 @@
 package models
 
 import java.net.URL
-import org.joda.time.DateTime
-import scala.collection.mutable.Queue
-import scala.Mutable
-import scala.collection.mutable.SynchronizedQueue
 
-case class NeuroticResult(hasChanged: Option[Boolean], baseline: Option[String], error: Option[String])
+import scala.Mutable
+import scala.collection.mutable.Queue
+import scala.collection.mutable.SynchronizedQueue
+import scala.concurrent._
+import scala.concurrent.Future
+
+import org.joda.time.DateTime
+
+import play.api.Logger
+import play.api.http.Status
+import play.api.libs.concurrent.Execution.Implicits._
+import play.api.libs.ws.WS
+
+case class NeuroticResult(hasChanged: Option[Boolean], baseline: Option[Int], error: Option[String])
 
 object NeuroticSueService {
   private type Heartbeat = Long
   
 	private case class NeuroticServer(host: String, lastChecked: Heartbeat)
-	private case class NeuroticResource(url: URL, contents: String,
-	    lastChecked: Heartbeat, lastError: Option[String], var lastRequested: DateTime)	
+	private case class NeuroticResource(url: URL, contents: Option[Int],
+	    lastChecked: DateTime, lastError: Option[String], var lastRequested: Option[DateTime])	
   private case class QueuedServer(server: NeuroticServer, resources: Queue[NeuroticResource])
 	
 	// Minimal duration between two checks for the same server (in seconds)
@@ -48,42 +57,71 @@ object NeuroticSueService {
     
     findResource(url) match {
       case Some(res) => {
-        res.lastRequested = DateTime.now
+        res.lastRequested = Option(DateTime.now)
         
         val hasChanged = res.lastError match {
         	case Some(error) => None
         	case None => Option(res.contents != baseline)
     		}
         
-        NeuroticResult(hasChanged, Option(res.contents), res.lastError)
+        NeuroticResult(hasChanged, res.contents, res.lastError)
       }
       case None => throw new IllegalStateException("URL is not in queued!")
     }
   }
   
-  def getBaseline(url: URL, remoteAddress: String): NeuroticResult = {
+  def getBaseline(url: URL, remoteAddress: String): Future[NeuroticResult] = {
     require(url != null, "url is required!")
     
     findResource(url) match {
-      case Some(res) => NeuroticResult(None, Option(res.contents), None)
+      case Some(res) => future { NeuroticResult(None, res.contents, None) }
       case None => addResource(url, remoteAddress)
     }
   }
   
-  private def addResource(url: URL, remoteAddress: String): NeuroticResult = {
+  private def addResource(url: URL, remoteAddress: String): Future[NeuroticResult] = {
     val checkResult = check(url, remoteAddress,
         checkMaxResourcesPerClient,
         checkMaxResourcesPerServer,
         checkMaxResourcesTotal)
         
 		checkResult match {
-      case Some(error) => NeuroticResult(None, None, Option(error))
+      case Some(error) => future { NeuroticResult(None, None, Option(error)) }
       case None => {
         // Everything's fine, add it to the queue ...
-        //TODO: ...
-        NeuroticResult(Option(false), None, None)
+        getResource(url) map { resource =>
+          resource.lastError match {
+            case Some(error) => NeuroticResult(None, None, Option(error))
+            case None => {
+              //TODO: Add to queues, update heartbeat...              
+              NeuroticResult(None, resource.contents, None)
+            }
+          }
+        }
       }
     }
+  }
+  
+  private def getResource(url: URL): Future[NeuroticResource] = {
+    val result = WS.url(url.toString).get().map { response =>
+      response.status match {
+        case Status.OK => {  
+          NeuroticResource(url, Option(getBodyHash(response.body)), DateTime.now, None, None)
+        }
+        case _ => NeuroticResource(url, None, DateTime.now, Option(response.statusText), None)
+      }
+    }
+    
+    result onFailure {
+      case t => Logger.error("Cannot get resource!", t)
+    }
+    
+    result
+  }
+  
+  private def getBodyHash(body: String): Int = {
+    // Well, let's see if this works reliably...
+    body.hashCode
   }
   
   private def check(url: URL, remoteAddress: String, checkers: (URL, String) => Option[String]*):
