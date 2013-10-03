@@ -1,44 +1,59 @@
 package models
 
 import java.net.URL
-
 import scala.Mutable
 import scala.collection.mutable.Queue
 import scala.collection.mutable.SynchronizedQueue
 import scala.concurrent._
 import scala.concurrent.Future
-
 import org.joda.time.DateTime
-
 import play.api.Logger
 import play.api.http.Status
 import play.api.libs.concurrent.Execution.Implicits._
 import play.api.libs.ws.WS
+import play.libs.Akka
+import akka.actor.Props
+import scala.concurrent.duration.Duration
+import java.util.concurrent.TimeUnit
+import akka.actor.Cancellable
+import scala.concurrent.duration.FiniteDuration
+import org.joda.time.Period
 
 case class NeuroticResult(hasChanged: Option[Boolean], baseline: Option[Int], error: Option[String])
 
 object NeuroticSueService {
   private type Heartbeat = Long
   
-	private case class NeuroticServer(host: String, lastChecked: Heartbeat)
+	private case class NeuroticServer(host: String, lastChecked: Option[DateTime])
 	private case class NeuroticResource(url: URL, contents: Option[Int],
 	    lastChecked: DateTime, lastError: Option[String], var lastRequested: Option[DateTime])	
-  private case class QueuedServer(server: NeuroticServer, resources: Queue[NeuroticResource])
+	    
+  private case class QueuedServer(server: NeuroticServer, resources: Queue[NeuroticResource]) {
+    def addResource(resource: NeuroticResource): Unit = {
+      resources.find(r => r.url == resource.url) match {
+        case Some(r) => throw new IllegalStateException("Resource with the same URL is already in the queue!")
+        case None => {
+          // Push new resource
+          resources.enqueue(resource)
+        }
+      }
+    }    
+  }
 	
-	// Minimal duration between two checks for the same server (in seconds)
-	private val MinServerDelay = 10
+	// Minimal duration between two checks for the same server
+	private val MinServerDelay = Duration.create(10, TimeUnit.SECONDS)
 	
-	// Minimal duration between two checks for the same URL (in seconds)
-	private val MinResourceDelay = 60
+	// Minimal duration between two checks for the same URL
+	private val MinResourceDelay = Duration.create(1, TimeUnit.MINUTES)
 	
-	// Maximal duration between two checks for the same URL (in seconds)
-	private val MaxResourceDelay = 120
+	// Maximal duration between two checks for the same URL
+	private val MaxResourceDelay = Duration.create(2, TimeUnit.MINUTES)
 	
 	// Maximal heartbeat (in seconds) 
-	private val MaxHeartbeat = 1
+	private val MaxHeartbeat = Duration.create(1, TimeUnit.SECONDS)
 	
 	// Cleanup resource after 5 minutes
-	private val TimeToLive = 300
+	private val TimeToLive = Duration.create(5, TimeUnit.MINUTES)
 	
 	// Maximal number of resources allowed for a single client
 	private val MaxResourcesPerClient = 2
@@ -50,6 +65,12 @@ object NeuroticSueService {
   
   // Queue of clients (remote address -> URL)
   private val clients = new SynchronizedQueue[(String, URL)]
+	
+	// Current heartbeat
+	private var heartbeat: Duration = Duration.Undefined
+	
+	// Scheduler for the neurotic actor
+	private var scheduler: Option[Cancellable] = None
   
   def hasChanged(url: URL, baseline: String): NeuroticResult = {
     require(url != null, "url is required!")
@@ -79,6 +100,33 @@ object NeuroticSueService {
     }
   }
   
+  private[models] def beatIt = {
+    pumpServers(servers)
+  }
+  
+  private def pumpServers(servers: Queue[QueuedServer]): Unit = {
+    val qs = servers.dequeue
+    if (isEligible(qs.server.lastChecked, heartbeat)) {
+      
+    }
+    else {
+      servers.enqueue(qs)
+      
+      // Pump the queue
+      pumpServers(servers)
+    }
+  }
+  
+  private def isEligible(lastChecked: Option[DateTime], heartbeat: Duration): Boolean = {
+    lastChecked match {
+      case None => true
+      case Some(lastChecked) => {
+        // We are pretty tolerant here
+      	new Period(lastChecked, DateTime.now()).getMillis() <= (heartbeat.toMillis / 2)
+      }
+    }      
+  }
+  
   private def addResource(url: URL, remoteAddress: String): Future[NeuroticResult] = {
     val checkResult = check(url, remoteAddress,
         checkMaxResourcesPerClient,
@@ -93,11 +141,81 @@ object NeuroticSueService {
           resource.lastError match {
             case Some(error) => NeuroticResult(None, None, Option(error))
             case None => {
-              //TODO: Add to queues, update heartbeat...              
+              // Add host to the list of servers (if not there yet)
+              val queuedServer = addServer(url.getHost)
+              
+              // Add resource to the server's queue
+              queuedServer.addResource(resource)
+                 
+              // Add to the list of clients
+              clients.enqueue((remoteAddress, resource.url))
+              
+              // Update heartbeat
+              updateHeartbeat()
+              
+              // Return result
               NeuroticResult(None, resource.contents, None)
             }
           }
         }
+      }
+    }
+  }
+  
+  private def updateHeartbeat(): Unit = {
+    // Compute new heartbeat duration
+    val newHeartbeat = computeHeartbeat()
+    
+    if (newHeartbeat != heartbeat) {
+      // Save new heartbeat value
+      heartbeat = newHeartbeat
+      
+	    scheduler match {
+	      // Cancel old scheduler
+	      case Some(c) => c.cancel
+	      case None => Unit
+	    }
+      
+      heartbeat match {
+        case finiteHeartbeat: FiniteDuration => {	    
+			    // Get actor reference
+			    val neuroticActor = Akka.system.actorOf(Props[NeuroticActor], name = "neuroticactor")
+			    
+			    //  Schedule actor
+			    scheduler = Option(Akka.system.scheduler.schedule(Duration.Zero, finiteHeartbeat,
+			        neuroticActor, NeuroticActor.HeartbeatMsg))
+		    }
+        case _ => Unit
+      }
+    }
+  }
+  
+  private def computeHeartbeat(): Duration = {
+    servers.size match {
+    	case 0 => Duration.Undefined
+    	case _ => {
+    	  // Get minimal server duration
+    	  val minServerDuration = servers map { server =>
+    	    MinServerDelay / server.resources.size
+  	    } min
+  	    
+  	    // The more servers, the faster heartbeat
+  	    minServerDuration / servers.size
+    	}
+    }
+  }
+  
+  private def addServer(host: String): QueuedServer = {
+    servers.find(qs => qs.server.host == host) match {
+      case Some(qs) => qs
+      case None => {
+        // Create new queue item
+        val qs = QueuedServer(NeuroticServer(host, None), new SynchronizedQueue[NeuroticResource])
+        
+        // Push it to the queue
+        servers.enqueue(qs)
+        
+        qs
       }
     }
   }
