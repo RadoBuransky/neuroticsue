@@ -1,6 +1,7 @@
 package controllers
 
 import play.api._
+import play.api.libs.concurrent.Execution.Implicits._
 import play.api.mvc._
 import java.net.URL
 import play.api.libs.json.JsObject
@@ -8,6 +9,7 @@ import play.api.libs.json.Json
 import play.api.libs.json.JsResult
 import play.api.libs.json.JsError
 import models.NeuroticSueService
+import models.NeuroticResult
 
 object NeuroticSueController extends Controller {  
   /**
@@ -27,16 +29,19 @@ object NeuroticSueController extends Controller {
       	case None => {
       	  val parsedUrl = new URL(url)
       	  
-      	  val neuroticResult = baseline match {
+      	  baseline match {
       	    // Check URL for changes
-      	    case Some(baseline) => NeuroticSueService.hasChanged(parsedUrl, baseline)
+      	    case Some(baseline) => {
+      	      neuroticToResult(NeuroticSueService.hasChanged(parsedUrl, baseline))
+      	    }
       	    
       	    // This is the first call, so get the baseline
-      	    case None => NeuroticSueService.getBaseline(parsedUrl, request.remoteAddress)
+      	    case None => Async {
+      	      NeuroticSueService.getBaseline(parsedUrl, request.remoteAddress) map { neuroticResult =>
+      	        neuroticToResult(neuroticResult)
+    	        }
+      	    }
       	  }
-      	  
-      	  // Serialize to JSON and return result
-      	  Ok
       	}
 	    }
     }
@@ -48,10 +53,15 @@ object NeuroticSueController extends Controller {
     }
   }
   
-//  private def neuroticResultToJson(neuroticResult: NeuroticResult): JsObject = {
-//    Json.obj("hasChanged" -> neuroticResult.hasChanged,
-//        "baseline" -> neuroticResult.baseline)
-//  }
+  private def neuroticResultToJson(neuroticResult: NeuroticResult): JsObject = {
+    Json.obj("hasChanged" -> neuroticResult.hasChanged,
+        "baseline" -> neuroticResult.baseline,
+        "error" -> neuroticResult.error)
+  }
+  
+  private def neuroticToResult(neuroticResult: NeuroticResult): Result = {
+    Ok(neuroticResultToJson(neuroticResult))
+  }
     
   private def validate(url: String, baseline: Option[String]): Option[String] = {
     if (url == null || url.isEmpty()) {

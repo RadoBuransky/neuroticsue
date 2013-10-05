@@ -1,28 +1,35 @@
 package models
 
 import java.net.URL
-import scala.Mutable
+import java.util.concurrent.TimeUnit
+
+import scala.Option.option2Iterable
+import scala.annotation.tailrec
+import scala.collection.mutable.HashSet
 import scala.collection.mutable.Queue
 import scala.collection.mutable.SynchronizedQueue
-import scala.concurrent._
+import scala.collection.mutable.SynchronizedSet
 import scala.concurrent.Future
+import scala.concurrent.duration.Duration
+import scala.concurrent.duration.FiniteDuration
+import scala.concurrent.future
+
 import org.joda.time.DateTime
+import org.joda.time.Period
+
+import akka.actor.Cancellable
+import akka.actor.Props
 import play.api.Logger
 import play.api.http.Status
-import play.api.libs.concurrent.Execution.Implicits._
+import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import play.api.libs.ws.WS
 import play.libs.Akka
-import akka.actor.Props
-import scala.concurrent.duration.Duration
-import java.util.concurrent.TimeUnit
-import akka.actor.Cancellable
-import scala.concurrent.duration.FiniteDuration
-import org.joda.time.Period
-import scala.annotation.tailrec
 
 case class NeuroticResult(hasChanged: Option[Boolean], baseline: Option[Int], error: Option[String])
 
 object NeuroticSueService {
+  Logger.debug("NeuroticSueService init.")
+  
   private type Heartbeat = Long
   
 	private case class NeuroticServer(host: String, lastChecked: Option[DateTime])
@@ -63,13 +70,16 @@ object NeuroticSueService {
 	private val MessageTooBusy = "Sorry, I am too busy now. Try again later."
 
   // Queue of servers with queues of resources
-  private val servers = new SynchronizedQueue[QueuedServer]
+  @volatile private var servers = new SynchronizedQueue[QueuedServer]
   
   // Queue of clients (remote address -> URL)
-  private val clients = new SynchronizedQueue[(String, URL)]
+  @volatile private var clients = new SynchronizedQueue[(String, URL)]
+	
+	// Synchronized hash set with all resources
+	@volatile private var results = new HashSet[NeuroticResource] with SynchronizedSet[NeuroticResource]
 	
 	// Current heartbeat
-	private var heartbeat: Duration = Duration.Undefined
+	@volatile private var heartbeat: Duration = Duration.Undefined
 	
 	// Scheduler for the neurotic actor
 	private var scheduler: Option[Cancellable] = None
@@ -77,6 +87,8 @@ object NeuroticSueService {
   def hasChanged(url: URL, baseline: String): NeuroticResult = {
     require(url != null, "url is required!")
     require(baseline != null, "baseline is required!")
+    
+    Logger.debug("hasChanged(" + url + ", " + baseline + ")");
     
     findResource(url) match {
       case Some(res) => {
@@ -89,43 +101,66 @@ object NeuroticSueService {
         
         NeuroticResult(hasChanged, res.contents, res.lastError)
       }
-      case None => throw new IllegalStateException("URL is not in queued!")
+      case None => throw new IllegalStateException("URL is not queued! Baseline is probably too old.")
     }
   }
   
   def getBaseline(url: URL, remoteAddress: String): Future[NeuroticResult] = {
     require(url != null, "url is required!")
     
+    Logger.debug("getBaseline(" + url + ", " + remoteAddress + ") " + Thread.currentThread().getId());
+        
     findResource(url) match {
-      case Some(res) => future { NeuroticResult(None, res.contents, None) }
-      case None => addResource(url, remoteAddress)
+      case Some(res) => { future {
+	    		Logger.debug("Baseline retrieved from existing resource. [" + url + "]")
+	        NeuroticResult(None, res.contents, None)
+	      }
+      }
+      case None => {
+        Logger.debug("Baseline not found in the results.");
+        addResource(url, remoteAddress)
+      }
     }
   }
   
   private[models] def beatIt = {
-    pumpServers(servers)
+    Logger.debug("Pumping. [" + DateTime.now + "]")
+  	//pumpServers(servers)
   }
   
   @tailrec
   private def pumpServers(servers: Queue[QueuedServer]): Unit = {
     if (servers.isEmpty) {
       // This can happen if all resources are being downloaded
+      Logger.debug("Nothing to pump.")
       return;
     }
     
     // Remove server from the queue
     val qs = servers.dequeue()
     
+    Logger.debug("Server pumped. [" + qs.server.host + "]")
+    
     if ((isEligible(qs.server.lastChecked, heartbeat)) &&
-        (isEligible(Option(qs.resources.head.lastChecked), ResourceTolerance))) {
+        (isEligible(Option(qs.resources.head.lastChecked), ResourceTolerance))) {      
       // Remove resource from the queue
       val resource = qs.resources.dequeue()
       
-      if (isTimeToDie(resource)) {
+      Logger.debug("Resource is eligible. [" + resource.url + "]")
+      
+      if (isTimeToDie(resource)) {        
+        // Remove from results
+    		results.remove(resource)
+    		
+        Logger.debug("Resource has died. [" + resource.url + "]")
+        
         if (!qs.resources.isEmpty) {
           // Put the server back to the queue
           servers.enqueue(qs)
         }
+    		
+    		// Remove from clients
+    		clients.dequeueAll(c => c._2 == resource.url)
           
         // Number of resources and servers has changed 
         updateHeartbeat()
@@ -133,12 +168,16 @@ object NeuroticSueService {
       else {      
 	      // Download resource and enqueue it once it's downloaded
 	      getResource(resource.url, resource.lastRequested) map { resource =>
-	        qs.resources.enqueue(resource)
-	        servers.enqueue(qs)
+	        qs.resources.enqueue(resource)	        
+	        
+	        servers.enqueue(QueuedServer(NeuroticServer(qs.server.host,
+	            Option(resource.lastChecked)), qs.resources))
 	      }
       }
     }
     else {
+    	Logger.debug("Pump abother server.")
+      
       servers.enqueue(qs)
       
       // Pump the queue
@@ -167,7 +206,10 @@ object NeuroticSueService {
         checkMaxResourcesTotal)
         
 		checkResult match {
-      case Some(error) => future { NeuroticResult(None, None, Option(error)) }
+      case Some(error) => future {
+    		Logger.debug("Error during adding a resource. [" + checkResult + ", " + url + "]")
+        NeuroticResult(None, None, Option(error))
+      }
       case None => {
         // Everything's fine, add it to the queue ...
         getResource(url, DateTime.now) map { resource =>
@@ -203,6 +245,8 @@ object NeuroticSueService {
       // Save new heartbeat value
       heartbeat = newHeartbeat
       
+      Logger.debug("New heartbeat. [" + heartbeat + "]")
+      
 	    scheduler match {
 	      // Cancel old scheduler
 	      case Some(c) => c.cancel
@@ -229,7 +273,7 @@ object NeuroticSueService {
     	case _ => {
     	  // Get minimal server duration
     	  val minServerDuration = servers map { server =>
-    	    MinServerDelay / server.resources.size
+    	    MinResourceDelay / server.resources.size
   	    } min
   	    
   	    // The more servers, the faster heartbeat
@@ -256,15 +300,35 @@ object NeuroticSueService {
   private def getResource(url: URL, lastRequested: DateTime): Future[NeuroticResource] = {
     val result = WS.url(url.toString).get().map { response =>
       response.status match {
-        case Status.OK => {  
-          NeuroticResource(url, Option(getBodyHash(response.body)), DateTime.now, None, lastRequested)
+        case Status.OK => {
+          val contents = getBodyHash(response.body)
+          Logger.debug("Resource downloaded. [" + contents + ", " + url + "]")
+          NeuroticResource(url, Option(contents), DateTime.now, None, lastRequested)
         }
-        case _ => NeuroticResource(url, None, DateTime.now, Option(response.statusText), lastRequested)
+        case _ => {
+          Logger.debug("Resource not downloaded. [" + response.status + ", " +
+              response.statusText + ", " + url + "]")
+          NeuroticResource(url, None, DateTime.now, Option(response.statusText), lastRequested)
+        }
+      }
+    }
+    
+    result map { resource =>
+      results synchronized {
+        findResource(resource.url) match {
+          case Some(old) => {
+            Logger.debug("Old result removed. [" + old + "]")
+            results.remove(old)
+          }
+          case _ =>
+        }
+        Logger.debug("New result added. [" + resource + "]")
+        results.add(resource)
       }
     }
     
     result onFailure {
-      case t => Logger.error("Cannot get resource!", t)
+      case t => Logger.error("Cannot get resource! [" + url + "]", t)
     }
     
     result
@@ -288,48 +352,36 @@ object NeuroticSueService {
   }
   
   private def checkMaxResourcesTotal(url: URL, remoteAddress: String): Option[String] = {
-    servers synchronized {
-      servers.flatMap(s => s.resources).length >= MaxResourceDelay / MaxHeartbeat match {
-        case true => Option(MessageTooBusy)
-        case false => None
-      }
+    servers.flatMap(s => s.resources).length >= MaxResourceDelay / MaxHeartbeat match {
+      case true => Option(MessageTooBusy)
+      case false => None
     }
   }
   
   private def checkMaxResourcesPerServer(url: URL, remoteAddress: String): Option[String] = {
-    servers synchronized {
-      servers find {
-        server => server.server.host == url.getHost
-      } match {
-        case Some(queuedServer) => {
-          queuedServer.resources.length >= MaxResourceDelay / MinServerDelay match {
-            case true => Option(MessageTooBusy)
-            case false => None
-          }
+    servers find {
+      server => server.server.host == url.getHost
+    } match {
+      case Some(queuedServer) => {
+        queuedServer.resources.length >= MaxResourceDelay / MinServerDelay match {
+          case true => Option(MessageTooBusy)
+          case false => None
         }
-        case None => None
       }
+      case None => None
     }
   }
   
   private def checkMaxResourcesPerClient(url: URL, remoteAddress: String): Option[String] = {
-    clients synchronized {
-	    // Check remote address limit
-	    clients.filter(client => client._1 == remoteAddress).length == MaxResourcesPerClient match {
-	      case true => Option("I cannot watch more than " + MaxResourcesPerClient + " pages for you.")
-	      case false => None
-	    }
+    // Check remote address limit
+    clients.filter(client => client._1 == remoteAddress).length == MaxResourcesPerClient match {
+      case true => Option("I cannot watch more than " + MaxResourcesPerClient + " pages for you.")
+      case false => None
     }
   }
   
   private def findResource(url: URL): Option[NeuroticResource] = {
-    servers synchronized {
-	    val allResources = servers flatMap {
-	      server => server.resources 
-	    }    
-	    allResources find {
-	      res => res.url == url
-	    }
-    }
+    Logger.debug(results.toString);
+    results find { result => result.url.toString == url.toString }
   }
 }
