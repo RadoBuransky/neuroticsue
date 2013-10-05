@@ -18,6 +18,7 @@ import java.util.concurrent.TimeUnit
 import akka.actor.Cancellable
 import scala.concurrent.duration.FiniteDuration
 import org.joda.time.Period
+import scala.annotation.tailrec
 
 case class NeuroticResult(hasChanged: Option[Boolean], baseline: Option[Int], error: Option[String])
 
@@ -26,7 +27,7 @@ object NeuroticSueService {
   
 	private case class NeuroticServer(host: String, lastChecked: Option[DateTime])
 	private case class NeuroticResource(url: URL, contents: Option[Int],
-	    lastChecked: DateTime, lastError: Option[String], var lastRequested: Option[DateTime])	
+	    lastChecked: DateTime, lastError: Option[String], var lastRequested: DateTime)	
 	    
   private case class QueuedServer(server: NeuroticServer, resources: Queue[NeuroticResource]) {
     def addResource(resource: NeuroticResource): Unit = {
@@ -45,6 +46,7 @@ object NeuroticSueService {
 	
 	// Minimal duration between two checks for the same URL
 	private val MinResourceDelay = Duration.create(1, TimeUnit.MINUTES)
+	private val ResourceTolerance = MinResourceDelay / 4
 	
 	// Maximal duration between two checks for the same URL
 	private val MaxResourceDelay = Duration.create(2, TimeUnit.MINUTES)
@@ -78,7 +80,7 @@ object NeuroticSueService {
     
     findResource(url) match {
       case Some(res) => {
-        res.lastRequested = Option(DateTime.now)
+        res.lastRequested = DateTime.now
         
         val hasChanged = res.lastError match {
         	case Some(error) => None
@@ -104,10 +106,37 @@ object NeuroticSueService {
     pumpServers(servers)
   }
   
+  @tailrec
   private def pumpServers(servers: Queue[QueuedServer]): Unit = {
-    val qs = servers.dequeue
-    if (isEligible(qs.server.lastChecked, heartbeat)) {
+    if (servers.isEmpty) {
+      // This can happen if all resources are being downloaded
+      return;
+    }
+    
+    // Remove server from the queue
+    val qs = servers.dequeue()
+    
+    if ((isEligible(qs.server.lastChecked, heartbeat)) &&
+        (isEligible(Option(qs.resources.head.lastChecked), ResourceTolerance))) {
+      // Remove resource from the queue
+      val resource = qs.resources.dequeue()
       
+      if (isTimeToDie(resource)) {
+        if (!qs.resources.isEmpty) {
+          // Put the server back to the queue
+          servers.enqueue(qs)
+        }
+          
+        // Number of resources and servers has changed 
+        updateHeartbeat()
+      }
+      else {      
+	      // Download resource and enqueue it once it's downloaded
+	      getResource(resource.url, resource.lastRequested) map { resource =>
+	        qs.resources.enqueue(resource)
+	        servers.enqueue(qs)
+	      }
+      }
     }
     else {
       servers.enqueue(qs)
@@ -117,12 +146,16 @@ object NeuroticSueService {
     }
   }
   
-  private def isEligible(lastChecked: Option[DateTime], heartbeat: Duration): Boolean = {
+  private def isTimeToDie(resource: NeuroticResource): Boolean = {
+    new Period(resource.lastRequested, DateTime.now).getMillis() > TimeToLive.toMillis
+  }
+  
+  private def isEligible(lastChecked: Option[DateTime], tolerance: Duration): Boolean = {
     lastChecked match {
       case None => true
       case Some(lastChecked) => {
         // We are pretty tolerant here
-      	new Period(lastChecked, DateTime.now()).getMillis() <= (heartbeat.toMillis / 2)
+      	new Period(lastChecked, DateTime.now()).getMillis() <= (tolerance.toMillis / 2)
       }
     }      
   }
@@ -137,7 +170,7 @@ object NeuroticSueService {
       case Some(error) => future { NeuroticResult(None, None, Option(error)) }
       case None => {
         // Everything's fine, add it to the queue ...
-        getResource(url) map { resource =>
+        getResource(url, DateTime.now) map { resource =>
           resource.lastError match {
             case Some(error) => NeuroticResult(None, None, Option(error))
             case None => {
@@ -220,13 +253,13 @@ object NeuroticSueService {
     }
   }
   
-  private def getResource(url: URL): Future[NeuroticResource] = {
+  private def getResource(url: URL, lastRequested: DateTime): Future[NeuroticResource] = {
     val result = WS.url(url.toString).get().map { response =>
       response.status match {
         case Status.OK => {  
-          NeuroticResource(url, Option(getBodyHash(response.body)), DateTime.now, None, None)
+          NeuroticResource(url, Option(getBodyHash(response.body)), DateTime.now, None, lastRequested)
         }
-        case _ => NeuroticResource(url, None, DateTime.now, Option(response.statusText), None)
+        case _ => NeuroticResource(url, None, DateTime.now, Option(response.statusText), lastRequested)
       }
     }
     
