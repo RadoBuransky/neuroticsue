@@ -27,9 +27,7 @@ import play.libs.Akka
 
 case class NeuroticResult(hasChanged: Option[Boolean], baseline: Option[Int], error: Option[String])
 
-object NeuroticSueService {
-  Logger.debug("NeuroticSueService init.")
-  
+object NeuroticSueService {  
   private type Heartbeat = Long
   
 	private case class NeuroticServer(host: String, lastChecked: Option[DateTime])
@@ -84,11 +82,14 @@ object NeuroticSueService {
 	// Scheduler for the neurotic actor
 	private var scheduler: Option[Cancellable] = None
   
+	var counter = 3;
+	
   def hasChanged(url: URL, baseline: String): NeuroticResult = {
     require(url != null, "url is required!")
     require(baseline != null, "baseline is required!")
     
-    Logger.debug("hasChanged(" + url + ", " + baseline + ")");
+    Logger.debug("hasChanged(" + url + ", " + baseline + ")");    
+    
     
     findResource(url) match {
       case Some(res) => {
@@ -108,8 +109,8 @@ object NeuroticSueService {
   def getBaseline(url: URL, remoteAddress: String): Future[NeuroticResult] = {
     require(url != null, "url is required!")
     
-    Logger.debug("getBaseline(" + url + ", " + remoteAddress + ") " + Thread.currentThread().getId());
-        
+    Logger.debug("getBaseline(" + url + ", " + remoteAddress + ")");
+    
     findResource(url) match {
       case Some(res) => { future {
 	    		Logger.debug("Baseline retrieved from existing resource. [" + url + "]")
@@ -125,7 +126,7 @@ object NeuroticSueService {
   
   private[models] def beatIt = {
     Logger.debug("Pumping. [" + DateTime.now + "]")
-  	//pumpServers(servers)
+  	pumpServers(servers)
   }
   
   @tailrec
@@ -254,10 +255,7 @@ object NeuroticSueService {
 	    }
       
       heartbeat match {
-        case finiteHeartbeat: FiniteDuration => {	    
-			    // Get actor reference
-			    val neuroticActor = Akka.system.actorOf(Props[NeuroticActor], name = "neuroticactor")
-			    
+        case finiteHeartbeat: FiniteDuration => {	  			    
 			    //  Schedule actor
 			    scheduler = Option(Akka.system.scheduler.schedule(Duration.Zero, finiteHeartbeat,
 			        neuroticActor, NeuroticActor.HeartbeatMsg))
@@ -265,6 +263,10 @@ object NeuroticSueService {
         case _ => Unit
       }
     }
+  }
+  
+  private lazy val neuroticActor = {
+    Akka.system.actorOf(Props[NeuroticActor], name = "neuroticactor")
   }
   
   private def computeHeartbeat(): Duration = {
@@ -382,6 +384,6 @@ object NeuroticSueService {
   
   private def findResource(url: URL): Option[NeuroticResource] = {
     Logger.debug(results.toString);
-    results find { result => result.url.toString == url.toString }
+    results find { result => (result.url.toString == url.toString)}
   }
 }

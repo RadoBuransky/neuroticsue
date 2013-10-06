@@ -18,8 +18,10 @@ object NeuroticSueController extends Controller {
    */
   def check(url: String, baseline: Option[String] = None) = Action { implicit request =>
     try {
+      val baselineNorm = emptyStringIsNone(baseline)
+        
 	    // Validate input
-      val validationResult = validate(url, baseline);
+      val validationResult = validate(url, baselineNorm);
 	    
       validationResult match {
         // Return validation error
@@ -29,10 +31,10 @@ object NeuroticSueController extends Controller {
       	case None => {
       	  val parsedUrl = new URL(url)
       	  
-      	  baseline match {
+      	  baselineNorm match {
       	    // Check URL for changes
-      	    case Some(baseline) => {
-      	      neuroticToResult(NeuroticSueService.hasChanged(parsedUrl, baseline))
+      	    case Some(baselineNorm) => {
+      	      neuroticToResult(NeuroticSueService.hasChanged(parsedUrl, baselineNorm))
       	    }
       	    
       	    // This is the first call, so get the baseline
@@ -49,6 +51,16 @@ object NeuroticSueController extends Controller {
       case ex: Throwable => {
         Logger.error("Oh shit! [" + url + ", " + baseline + "]", ex)
         BadRequest("Something really bad has happened! Sorry for that.")
+      }
+    }
+  }
+  
+  private def emptyStringIsNone(string: Option[String]): Option[String] = {
+    string match {
+      case None => None
+      case Some(str) => str.isEmpty match {
+        case true => None
+        case _ => Option(str)
       }
     }
   }

@@ -13,7 +13,7 @@
     </head>
     <body>
     	<div id="container" class="container">
-	    	<h1 id="headline">Neurotic Sue</h1>	    	
+	    	<h1 id="headline">Neurotic Sue <span class="glyphicon glyphicon-refresh"></span></h1>	    	
     		<div id="urls">
 		    	<h2><small>
 		    		Checks a page for changes every 59 seconds. Plays a song to let you know.</small></h2>
@@ -21,20 +21,21 @@
 					  <div class="form-group">
 					    <label for="urlToCheck">Page to check</label>
 					    <input type="url" class="form-control" id="urlToCheck"
-					    	placeholder="Enter link to the page that will be checked" required
-					    	value="http://www.sme.sk/">
+					    	placeholder="Enter link to the page that will be checked" required>
 					  </div>
 					  <div class="form-group">
 					    <label for="songToPlay">Song to play</label>
 					    <input type="url" class="form-control" id="songToPlay"
-					    	placeholder="Enter link to a YouTube video to play when the page changes" required
-					    	value="http://youtu.be/2olBE4C5_Gk">			    
+					    	placeholder="Enter link to a YouTube video to play when the page changes" required>			    
 					  </div>
 	  				<button type="submit" class="btn btn-primary">Start</button>
 		    	</form>
 	    	</div>
 	    	<div id="checker">
-	    		<h2><small id="status"></small></h2>
+	    		<div style="margin-bottom: 20px;">
+		    		<h2><small id="status"></small></h2>
+	  				<button id="stop" type="button" class="btn btn-primary">Stop</button>
+ 					</div>
 	    		<div id="player"></div>
 	    	</div>
     	</div>
@@ -43,24 +44,38 @@
     	<script src="//netdna.bootstrapcdn.com/bootstrap/3.0.0/js/bootstrap.min.js"></script>
     	
     	<script>
-    		var CountdownInit = 3;
+    		var CountdownInit = 59;
     		
-    		var headline = null;
     		var countdown = 0;
     		var encodedUrlToCheck = null;
     		var timerId = null;
     		var baseline = 0;
     		 
     		function setStatus(status) {
-        		$('#status').html(status);
+					var d = new Date();
+					var hr = d.getHours();
+					var min = d.getMinutes();
+					if (min < 10) {
+					    min = "0" + min;
+					}
+     			status = hr + ':' + min + ' ' + status 
+        	$('#status').html(status);
     		}
 
     		function setError(status) {
     			setStatus(status);
     		}
 
+    		function setHeadline(add) {
+        		var headline = 'Neurotic Sue';
+        		if (add != null) {
+        			headline += add;
+        		}
+    			$('#headline').html(headline);
+    		}
+
     		function timerHandler() {
-    			$('#headline').html(headline + ' <span class=\'glyphicon glyphicon-refresh\'></span> ' + countdown);
+    			setHeadline(' <span class=\'glyphicon glyphicon-refresh\'></span> ' + countdown);
     			countdown--;
 
     			if (countdown == 0) {
@@ -68,8 +83,15 @@
     				window.clearInterval(timerId)
     				
     				ajaxCheck(encodedUrlToCheck, baseline, function(data) {
-        				if (data.baseline == baseline) {
+        				if (!data.hasChanged) {
            				console.debug('No change.');
+
+           				if (data.lastError == null) {
+            				setStatus('Page checked. No changes.');
+           				}
+           				else {
+            				setStatus(data.lastError);
+           				}
            				
 	        				// Start timer again
 	        				resetTimer();
@@ -82,8 +104,12 @@
     		}
 
     		function pageHasChanged(data) {
+    			setStatus('Page has changed!');
+    			setHeadline(' <span class=\'glyphicon glyphicon-exclamation-sign\'></span>');    			
+	     		document.title = '!!! ' + document.title;
+	     		$('body').css('background-color', '#FF0000');	     		
+    			
 	     		console.debug('Page has changed!. [' + data.baseline + ']');	
-	     		document.title = '!! ' + document.title;
 	     		if (player != null) {
 	     			player.setVolume(100);
 		     		player.playVideo();
@@ -95,12 +121,13 @@
 	 				timerId = window.setInterval(timerHandler, 1000);
     		}
 
-    		function ajaxCheck(url, baseline, successHandler) {
-        	console.debug('Checking [' + baseline + '] ' + url);
+    		function ajaxCheck(encodedUrl, baselineValue, successHandler) {
+        	console.debug('Checking [' + baselineValue + '] ' + encodedUrl);
     			jQuery.ajax({
     			    type: "GET",
-    			    url: 'check/http%3A%2F%2Fwww.sme.sk%2F',
+    			    url: 'check/' + encodedUrl,
     			    dataType: 'json',
+    			    data: { baseline: baselineValue},
     			    success: function(data) {
    	       			if (data.error == null) {
     			    		successHandler(data);
@@ -127,10 +154,25 @@
     		}
 
     		function start() {
-    			headline = $('#headline').html();
     			encodedUrlToCheck = encodeURIComponent($("#urlToCheck").val());
     			getBaseline();
     		}
+
+    		function stop() {
+       		// Stop counting for a while
+					window.clearInterval(timerId)
+					
+					$('#urls').show();
+					$('#checker').hide();
+					setHeadline(' <span class=\'glyphicon glyphicon-refresh\'></span>');
+
+					countdown = 0;
+					encodedUrlToCheck = null;
+					timerId = null;
+					baseline = 0;
+    		}
+
+    		$('#stop').click(stop);
     	</script>
     	<script>
 				var youTubeReady = false;
