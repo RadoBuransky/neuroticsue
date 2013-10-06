@@ -7,4 +7,5 @@ GET     /                           controllers.Application.index
 GET     /check/:url					controllers.NeuroticSueController.check(url, baseline: Option[String])
 
 # Map static resources from the /public folder to the /assets URL path
-GET     /assets/*file               controllers.Assets.at(path="/public", file)
+GET     /assets/*file               	controllers.Assets.at(path="/public", file)
+GET     /googlea5dbcce0e6215b71.html	controllers.Assets.at(path="/public", file="googlea5dbcce0e6215b71.html")
