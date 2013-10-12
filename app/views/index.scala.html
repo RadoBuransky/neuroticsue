@@ -5,41 +5,91 @@
         <title>Neurotic Sue</title>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         
-        <link rel="shortcut icon" type="image/png" href="@routes.Assets.at("images/favicon.png")">
+        <link rel="shortcut icon" type="image/png" href="@routes.Assets.at("images/icon.png")">
         
         <link href="//netdna.bootstrapcdn.com/bootstrap/3.0.0/css/bootstrap.min.css" rel="stylesheet">
         <link href="@routes.Assets.at("stylesheets/main.css")" rel="stylesheet" media="screen">
         
     </head>
-    <body>
-    	<div id="container" class="container">
-	    	<h1 id="headline">Neurotic Sue <span class="glyphicon glyphicon-refresh"></span></h1>	    	
-    		<div id="urls">
-		    	<h2><small>
-		    		Checks a page for changes every 59 seconds. Plays a song to let you know.</small></h2>
-		    	<form id="form" role="form">
-					  <div class="form-group">
-					    <label for="urlToCheck">Page to check</label>
-					    <input type="url" class="form-control" id="urlToCheck"
-					    	placeholder="Enter link to the page that will be checked" required>
-					  </div>
-					  <div class="form-group">
-					    <label for="songToPlay">Song to play</label>
-					    <input type="url" class="form-control" id="songToPlay"
-					    	placeholder="Enter link to a YouTube video to play when the page changes" required>			    
-					  </div>
-	  				<button type="submit" class="btn btn-primary">Start</button>
-		    	</form>
-	    	</div>
-	    	<div id="checker">
-	    		<div style="margin-bottom: 20px;">
-		    		<h2><small id="status"></small></h2>
-	  				<button id="stop" type="button" class="btn btn-primary">Stop</button>
- 					</div>
-	    		<div id="player"></div>
-	    	</div>
-    	</div>
+    <body>    	
+    	<div id="container">
+    		<div id="part1" class="part" style="background-color: #511D5C; padding-bottom: 150px">
+    			<div class="container">
+			    	<h1 id="headline">Neurotic Sue <span class="glyphicon glyphicon-refresh"></span></h1>	    	
+		    		<div id="urls">
+				    	<h2><small>
+				    		Checks a page for changes every 59 seconds. Plays a song to let you know.</small></h2>
+				    	<form id="form" role="form">
+							  <div class="form-group">
+							    <label for="urlToCheck">Page to check</label>
+							    <input type="url" class="form-control" id="urlToCheck"
+							    	placeholder="Enter link to the page that will be checked" required
+							    	value="http://www.sme.sk/">
+							  </div>
+							  <div class="form-group">
+							    <label for="songToPlay">Song to play</label>
+							    <input type="url" class="form-control" id="songToPlay"
+							    	placeholder="Enter link to a YouTube video to play when the page changes" required
+							    	value="http://www.youtube.com/watch?v=tgsb4Q2VhyI">			    
+							  </div>
+			  				<button type="submit" class="btn btn-primary">Start</button>
+				    	</form>
+			    	</div>
+			    	<div id="checker">
+			    		<div style="margin-bottom: 20px;">
+				    		<h2><small id="status"></small></h2>
+			  				<button id="stop" type="button" class="btn btn-primary">Stop</button>
+							</div>
+			    		<div id="player"></div>
+			    	</div>
+    			</div>
+    		</div>
+    		<div class="part" style="background-color: #FF0000">
+    			<div class="container">
+		    		<h1>Technical details</h1>
+		    		<p>Although Sue claims to be superior, she's not that clever. She's not smart enough to handle:</p>
+		    		<ol>
+		    			<li>Client-side JavaScript changes (AJAX, AngularJS, ...)</li>
+		    			<li>Flash, Silverlight, Java applet or whatever kind of plugins</li>
+		    		</ol>
+		    		<p>In other words, it deals well with server-side changes only. Unfortunately for you, my dear non-technical
+		    		user, it's difficult to find out whether it will work for you or not . Just try it.</p>
+		    		<p>You are allowed to watch at most two pages at the same time.</p>    			
+   				</div>
+   			</div>
+    		<div class="part" style="background-color: #04460C">
+    			<div class="container">
+		    		<h1>The story</h1>
+		    		<p>In 2013 I decided to go to Canada under <a href="http://www.international.gc.ca/experience/index.aspx" target="_blank">International Experience Canada</a> (IEC) visa program.
+		    		Quota for the Working Holiday category for Slovakia was set to 315 people. The problem was that
+		    		number of applicants was much higher so I had to be really fast and apply immediately when
+		    		possible.</p>
+		    		<p>To help me with this stressful task I have created this lovely neurotic Sue. She was checking
+		    		<a href="http://www.canadainternational.gc.ca/austria-autriche/experience_canada_experience/slovakia-slovaquie/index.aspx" target="_blank">website of Canadian Government</a> all day and night. When the page has changed, she started playing
+		    		loud music and I quickly started filling forms for the application.</p>
+		    		<p>The available quota for that year was gone in 3 hours, but we got it. Thanks to Sue.</p>
+	    		</div>
+    		</div>
+   		</div>
+   		<div class="part" style="padding-top: 10px">
+   			<div class="container">
+   				<center>
+   					<p>
+   						<a href="http://buransky.com/" target="_blank">Rado Buranský</a>,
+   						<a href="https://github.com/RadoBuransky/neuroticsue" target="_blank">GitHub</a></p>
+   					<div class="fb-follow" data-href="https://www.facebook.com/neuroticsue" data-width="The pixel width of the plugin" data-height="The pixel height of the plugin" data-colorscheme="dark" data-layout="button_count" data-show-faces="false"></div>
+   				</center>
+    		</div>
+   		</div>
     	
+    	<div id="fb-root"></div>
+			<script>(function(d, s, id) {
+			  var js, fjs = d.getElementsByTagName(s)[0];
+			  if (d.getElementById(id)) return;
+			  js = d.createElement(s); js.id = id;
+			  js.src = "//connect.facebook.net/en_US/all.js#xfbml=1&appId=292187990923987";
+			  fjs.parentNode.insertBefore(js, fjs);
+			}(document, 'script', 'facebook-jssdk'));</script>
 			<script src="//code.jquery.com/jquery-2.0.3.min.js"></script>
     	<script src="//netdna.bootstrapcdn.com/bootstrap/3.0.0/js/bootstrap.min.js"></script>
     	<script src="//cdnjs.cloudflare.com/ajax/libs/URI.js/1.7.2/URI.min.js"></script>
@@ -108,7 +158,7 @@
     			setStatus('Page has changed!');
     			setHeadline(' <span class=\'glyphicon glyphicon-exclamation-sign\'></span>');    			
 	     		document.title = '!!! ' + document.title;
-	     		$('body').css('background-color', '#FF0000');	     		
+	     		$('#part1').css('background-color', '#FF0000');	     		
     			
 	     		console.debug('Page has changed!. [' + data.baseline + ']');	
 	     		if (player != null) {
@@ -124,11 +174,16 @@
 
     		function ajaxCheck(encodedUrl, baselineValue, successHandler) {
         	console.debug('Checking [' + baselineValue + '] ' + encodedUrl);
+        	var d = new Object();
+        	d.url = encodedUrl;
+        	if (baselineValue != null) {
+            	d.baseline = baselineValue;
+        	}
     			jQuery.ajax({
     			    type: "GET",
     			    url: 'check',
     			    dataType: 'json',
-    			    data: { url: encodedUrl, baseline: baselineValue},
+    			    data: d,
     			    success: function(data) {
    	       			if (data.error == null) {
     			    		successHandler(data);
@@ -160,12 +215,17 @@
     		}
 
     		function stop() {
+	     		if (player != null) {
+		     		player.stopVideo();
+	     		}
+	     		
        		// Stop counting for a while
 					window.clearInterval(timerId)
 					
 					$('#urls').show();
 					$('#checker').hide();
 					setHeadline(' <span class=\'glyphicon glyphicon-refresh\'></span>');
+	     		$('#part1').css('background-color', '#511D5C');	    
 
 					countdown = 0;
 					encodedUrlToCheck = null;

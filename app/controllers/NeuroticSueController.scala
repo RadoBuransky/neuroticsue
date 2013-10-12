@@ -17,12 +17,12 @@ object NeuroticSueController extends Controller {
    * GET method to check the URL for any changes compared to the
    * provided baseline. 
    */
-  def check(url: Option[String], baseline: Option[String] = None) = Action { implicit request =>
+  def check(url: Option[String], baseline: Option[Int] = None) = Action { implicit request =>
     try {
-      val baselineNorm = emptyStringIsNone(baseline)
+      //val baselineNorm = emptyStringIsNone(baseline)
         
 	    // Validate input
-      val validationResult = validate(url, baselineNorm);
+      val validationResult = validate(url, baseline);
 	    
       validationResult match {
         // Return validation error
@@ -32,10 +32,10 @@ object NeuroticSueController extends Controller {
       	case None => {
       	  val parsedUrl = new URL(URLDecoder.decode(url.get, "UTF-8"))
       	  
-      	  baselineNorm match {
+      	  baseline match {
       	    // Check URL for changes
-      	    case Some(baselineNorm) => {
-      	      neuroticToResult(NeuroticSueService.hasChanged(parsedUrl, baselineNorm))
+      	    case Some(baseline) => {
+      	      neuroticToResult(NeuroticSueService.hasChanged(parsedUrl, baseline))
       	    }
       	    
       	    // This is the first call, so get the baseline
@@ -76,7 +76,7 @@ object NeuroticSueController extends Controller {
     Ok(neuroticResultToJson(neuroticResult))
   }
     
-  private def validate(url: Option[String], baseline: Option[String]): Option[String] = {
+  private def validate(url: Option[String], baseline: Option[Int]): Option[String] = {
     url match {
       case Some(urlValue) => {
         try {

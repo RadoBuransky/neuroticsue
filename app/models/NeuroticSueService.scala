@@ -80,15 +80,12 @@ object NeuroticSueService {
 	
 	// Scheduler for the neurotic actor
 	private var scheduler: Option[Cancellable] = None
-  
-	var counter = 3;
 	
-  def hasChanged(url: URL, baseline: String): NeuroticResult = {
+  def hasChanged(url: URL, baseline: Int): NeuroticResult = {
     require(url != null, "url is required!")
     require(baseline != null, "baseline is required!")
     
-    Logger.debug("hasChanged(" + url + ", " + baseline + ")");    
-    
+    Logger.debug("hasChanged(" + url + ", " + baseline + ")");     
     
     findResource(url) match {
       case Some(res) => {
@@ -96,7 +93,12 @@ object NeuroticSueService {
         
         val hasChanged = res.lastError match {
         	case Some(error) => None
-        	case None => Option(res.contents != baseline)
+        	case None => {
+        	  res.contents match {
+        	    case Some(c) => Option(c != baseline)
+        	    case None => None
+        	  }
+        	}
     		}
         
         NeuroticResult(hasChanged, res.contents, res.lastError)
@@ -176,7 +178,7 @@ object NeuroticSueService {
       }
     }
     else {
-    	Logger.debug("Pump abother server.")
+    	Logger.debug("Pump another server.")
       
       servers.enqueue(qs)
       
@@ -376,7 +378,7 @@ object NeuroticSueService {
   private def checkMaxResourcesPerClient(url: URL, remoteAddress: String): Option[String] = {
     // Check remote address limit
     clients.filter(client => client._1 == remoteAddress).length == MaxResourcesPerClient match {
-      case true => Option("I cannot watch more than " + MaxResourcesPerClient + " pages for you.")
+      case true => Option("Sorry. I cannot watch more than " + MaxResourcesPerClient + " pages for you.")
       case false => None
     }
   }
