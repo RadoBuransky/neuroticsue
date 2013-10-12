@@ -2,7 +2,6 @@ package models
 
 import java.net.URL
 import java.util.concurrent.TimeUnit
-
 import scala.Option.option2Iterable
 import scala.annotation.tailrec
 import scala.collection.mutable.HashSet
@@ -13,10 +12,8 @@ import scala.concurrent.Future
 import scala.concurrent.duration.Duration
 import scala.concurrent.duration.FiniteDuration
 import scala.concurrent.future
-
 import org.joda.time.DateTime
 import org.joda.time.Period
-
 import akka.actor.Cancellable
 import akka.actor.Props
 import play.api.Logger
@@ -24,6 +21,8 @@ import play.api.http.Status
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import play.api.libs.ws.WS
 import play.libs.Akka
+import scala.collection.mutable.HashMap
+import scala.collection.mutable.SynchronizedMap
 
 case class NeuroticResult(hasChanged: Option[Boolean], baseline: Option[Int], error: Option[String])
 
@@ -74,7 +73,7 @@ object NeuroticSueService {
   @volatile private var clients = new SynchronizedQueue[(String, URL)]
 	
 	// Synchronized hash set with all resources
-	@volatile private var results = new HashSet[NeuroticResource] with SynchronizedSet[NeuroticResource]
+	@volatile private var results = new HashMap[String, NeuroticResource] with SynchronizedMap[String, NeuroticResource]
 	
 	// Current heartbeat
 	@volatile private var heartbeat: Duration = Duration.Undefined
@@ -151,7 +150,7 @@ object NeuroticSueService {
       
       if (isTimeToDie(resource)) {        
         // Remove from results
-    		results.remove(resource)
+    		results.remove(resource.url.toString())
     		
         Logger.debug("Resource has died. [" + resource.url + "]")
         
@@ -320,12 +319,12 @@ object NeuroticSueService {
         findResource(resource.url) match {
           case Some(old) => {
             Logger.debug("Old result removed. [" + old + "]")
-            results.remove(old)
+            results.remove(old.url.toString())
           }
           case _ =>
         }
         Logger.debug("New result added. [" + resource + "]")
-        results.add(resource)
+        results.put(resource.url.toString(), resource)
       }
     }
     
@@ -384,6 +383,6 @@ object NeuroticSueService {
   
   private def findResource(url: URL): Option[NeuroticResource] = {
     Logger.debug(results.toString);
-    results find { result => (result.url.toString == url.toString)}
+    results.get(url.toString)
   }
 }

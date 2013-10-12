@@ -42,6 +42,7 @@
     	
 			<script src="//code.jquery.com/jquery-2.0.3.min.js"></script>
     	<script src="//netdna.bootstrapcdn.com/bootstrap/3.0.0/js/bootstrap.min.js"></script>
+    	<script src="//cdnjs.cloudflare.com/ajax/libs/URI.js/1.7.2/URI.min.js"></script>
     	
     	<script>
     		var CountdownInit = 59;
@@ -125,9 +126,9 @@
         	console.debug('Checking [' + baselineValue + '] ' + encodedUrl);
     			jQuery.ajax({
     			    type: "GET",
-    			    url: 'check/' + encodedUrl,
+    			    url: 'check',
     			    dataType: 'json',
-    			    data: { baseline: baselineValue},
+    			    data: { url: encodedUrl, baseline: baselineValue},
     			    success: function(data) {
    	       			if (data.error == null) {
     			    		successHandler(data);
@@ -216,13 +217,36 @@
 
 				function validateUrl(url) {
 				  var urlregex = new RegExp(
-				        "^(http:\/\/www.|https:\/\/www.|www.){1}([0-9A-Za-z]+\.)");
+				        "^(http:\/\/|https:\/\/){1}([0-9A-Za-z]+\.)");
 				  return urlregex.test(url);
+				}
+
+				function normalizeUrl(uri) {
+					if (!uri.protocol()) {
+						uri.protocol('http');
+					}
+					uri.normalize();
+				}
+
+				function normalizeUrlToCheck() {
+					var uri = new URI($('#urlToCheck').val());
+					normalizeUrl(uri);
+					$('#urlToCheck').val(uri.build());
+				}
+
+				function normalizeSongToPlay() {
+					var uri = new URI($('#songToPlay').val());
+					normalizeUrl(uri);
+					$('#songToPlay').val(uri.build());
 				}
 
 				$(function() {
 					$('#form').on('submit', function(e) {
 						e.preventDefault();
+
+						// Normalize URLs
+						normalizeUrlToCheck();
+						normalizeSongToPlay();
 
 						// Hide form, show checker
 						$('#urls').hide();
@@ -264,7 +288,15 @@
 
 				// Initialize YouTube
 				initYouTube();
+
+				// Init
 				$('#checker').hide();
+				$('#urlToCheck').focusout(function() {
+					normalizeUrlToCheck();
+				});
+				$('#songToPlay').focusout(function() {
+					normalizeSongToPlay();
+				});
 			</script>
 			<script>
 				(function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){

@@ -10,13 +10,14 @@ import play.api.libs.json.JsResult
 import play.api.libs.json.JsError
 import models.NeuroticSueService
 import models.NeuroticResult
+import java.net.URLDecoder
 
 object NeuroticSueController extends Controller {  
   /**
    * GET method to check the URL for any changes compared to the
    * provided baseline. 
    */
-  def check(url: String, baseline: Option[String] = None) = Action { implicit request =>
+  def check(url: Option[String], baseline: Option[String] = None) = Action { implicit request =>
     try {
       val baselineNorm = emptyStringIsNone(baseline)
         
@@ -29,7 +30,7 @@ object NeuroticSueController extends Controller {
 	      
       	// No validation errors
       	case None => {
-      	  val parsedUrl = new URL(url)
+      	  val parsedUrl = new URL(URLDecoder.decode(url.get, "UTF-8"))
       	  
       	  baselineNorm match {
       	    // Check URL for changes
@@ -75,18 +76,21 @@ object NeuroticSueController extends Controller {
     Ok(neuroticResultToJson(neuroticResult))
   }
     
-  private def validate(url: String, baseline: Option[String]): Option[String] = {
-    if (url == null || url.isEmpty()) {
-      Some("URL is required!")
-    }
-    else {
-      try {
-      	val parsedUrl = new URL(url)
-      	None
+  private def validate(url: Option[String], baseline: Option[String]): Option[String] = {
+    url match {
+      case Some(urlValue) => {
+        try {
+          if (!urlValue.isEmpty) {
+		      	val parsedUrl = new URL(URLDecoder.decode(urlValue, "UTF-8"))
+		      	return None
+          }
+	      }
+	      catch {
+	        case ex: Exception => return Some(ex.getMessage())
+	      }
       }
-      catch {
-        case ex: Exception => Some(ex.getMessage())
-      }
+      case None =>
     }
+    return Some("URL is required!")
   }
 }
