@@ -18,9 +18,7 @@ object NeuroticSueController extends Controller {
    * provided baseline. 
    */
   def check(url: Option[String], baseline: Option[Int] = None) = Action { implicit request =>
-    try {
-      //val baselineNorm = emptyStringIsNone(baseline)
-        
+    try {        
 	    // Validate input
       val validationResult = validate(url, baseline);
 	    
@@ -52,16 +50,6 @@ object NeuroticSueController extends Controller {
       case ex: Throwable => {
         Logger.error("Oh shit! [" + url + ", " + baseline + "]", ex)
         BadRequest("Something really bad has happened! Sorry for that.")
-      }
-    }
-  }
-  
-  private def emptyStringIsNone(string: Option[String]): Option[String] = {
-    string match {
-      case None => None
-      case Some(str) => str.isEmpty match {
-        case true => None
-        case _ => Option(str)
       }
     }
   }

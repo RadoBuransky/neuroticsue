@@ -83,7 +83,6 @@ object NeuroticSueService {
 	
   def hasChanged(url: URL, baseline: Int): NeuroticResult = {
     require(url != null, "url is required!")
-    require(baseline != null, "baseline is required!")
     
     Logger.debug("hasChanged(" + url + ", " + baseline + ")");     
     
