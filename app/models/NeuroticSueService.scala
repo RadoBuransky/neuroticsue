@@ -23,6 +23,22 @@ import play.api.libs.ws.WS
 import play.libs.Akka
 import scala.collection.mutable.HashMap
 import scala.collection.mutable.SynchronizedMap
+import play.api.libs.MimeTypes
+import com.ning.http.client.{
+  AsyncHttpClient,
+  AsyncHttpClientConfig,
+  RequestBuilderBase,
+  FluentCaseInsensitiveStringsMap,
+  HttpResponseBodyPart,
+  HttpResponseHeaders,
+  HttpResponseStatus,
+  Response => AHCResponse,
+  PerRequestConfig
+}
+import com.ning.http.client.AsyncCompletionHandler
+import scala.concurrent.Promise
+import play.api.libs.ws.Response
+import com.ning.http.client.AsyncHandler.STATE
 
 case class NeuroticResult(hasChanged: Option[Boolean], baseline: Option[Int], error: Option[String])
 
@@ -65,6 +81,8 @@ object NeuroticSueService {
 	private val MaxResourcesPerClient = 2
 	
 	private val MessageTooBusy = "Sorry, I am too busy now. Try again later."
+	  
+  private val ContentTypeHeader = "Content-Type"
 
   // Queue of servers with queues of resources
   @volatile private var servers = new SynchronizedQueue[QueuedServer]
@@ -299,13 +317,65 @@ object NeuroticSueService {
     }
   }
   
-  private def getResource(url: URL, lastRequested: DateTime): Future[NeuroticResource] = {
-    val result = WS.url(url.toString).get().map { response =>
+  private def executeWs(url: URL): Future[Response] = {
+      import com.ning.http.client.AsyncCompletionHandler
+      var result = Promise[Response]()
+      WS.client.prepareGet(url.toString).execute(new AsyncCompletionHandler[AHCResponse]() {        
+        var counter: Long = 0
+        var aborted: Boolean = false
+        
+        override def onHeadersReceived(h: HttpResponseHeaders) = {
+          super.onHeadersReceived(h)
+          
+          val headers = h.getHeaders()
+          headers.getFirstValue(ContentTypeHeader) match {
+            case "text/html" => STATE.CONTINUE
+            case ct: String => {             
+		          Logger.debug("Mime type not supported. [" + ct + ", " + url + "]")
+              aborted = true
+              STATE.ABORT
+            }
+          }          
+        }
+        
+        override def onBodyPartReceived(content: HttpResponseBodyPart) = {
+          counter += content.getBodyPartBytes().length
+          if (counter > 100*1024) {
+	          Logger.debug("That's just too much. [" + counter + "]")
+            content.closeUnderlyingConnection()
+            aborted = true
+            STATE.ABORT
+          }
+          else {          
+          	super.onBodyPartReceived(content)
+          }
+        }
+        
+        override def onCompleted(response: AHCResponse) = {
+          if (!aborted) {
+          	result.success(Response(response))
+          }
+          else {
+            result.failure(new IllegalStateException("Cannot get the page!"))
+          }
+          response
+        }
+        
+        override def onThrowable(t: Throwable) = {
+          result.failure(t)
+        }
+      })
+      result.future
+    }
+  
+  private def getResource(url: URL, lastRequested: DateTime): Future[NeuroticResource] = { 
+    val httpResponse = executeWs(url)
+    val result = httpResponse.map { response =>
       response.status match {
         case Status.OK => {
           val contents = getBodyHash(response.body)
           Logger.debug("Resource downloaded. [" + contents + ", " + url + "]")
-          NeuroticResource(url, Option(contents), DateTime.now, None, lastRequested)
+          NeuroticResource(url, Option(contents), DateTime.now, None, lastRequested) 
         }
         case _ => {
           Logger.debug("Resource not downloaded. [" + response.status + ", " +
@@ -324,8 +394,14 @@ object NeuroticSueService {
           }
           case _ =>
         }
-        Logger.debug("New result added. [" + resource + "]")
-        results.put(resource.url.toString(), resource)
+        
+        resource.lastError match {
+          case None => {
+		        Logger.debug("New result added. [" + resource + "]")
+		        results.put(resource.url.toString(), resource)            
+          }
+          case _ =>
+        }
       }
     }
     
