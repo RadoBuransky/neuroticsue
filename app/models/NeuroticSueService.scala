@@ -328,19 +328,21 @@ object NeuroticSueService {
           super.onHeadersReceived(h)
           
           val headers = h.getHeaders()
-          headers.getFirstValue(ContentTypeHeader) match {
-            case "text/html" => STATE.CONTINUE
-            case ct: String => {             
-		          Logger.debug("Mime type not supported. [" + ct + ", " + url + "]")
-              aborted = true
-              STATE.ABORT
-            }
-          }          
+          val ct = headers.getFirstValue(ContentTypeHeader)
+          if ((ct != null) &&
+              (ct.indexOf("text/html") >= 0)) {
+            STATE.CONTINUE
+          }
+          else {             
+	          Logger.debug("Mime type not supported. [" + ct + ", " + url + "]")
+            aborted = true
+            STATE.ABORT
+          }       
         }
         
         override def onBodyPartReceived(content: HttpResponseBodyPart) = {
           counter += content.getBodyPartBytes().length
-          if (counter > 100*1024) {
+          if (counter > 300*1024) {
 	          Logger.debug("That's just too much. [" + counter + "]")
             content.closeUnderlyingConnection()
             aborted = true

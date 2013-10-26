@@ -255,12 +255,17 @@
 						console.error('YouTube player is not ready!');
 						return;
 					}
-					
-					player = new YT.Player('player', {
-				    height: '390',
-				    width: maxWidth,
-	          videoId: songToPlayId
-					});
+
+					if (player == null) {
+						player = new YT.Player('player', {
+					    height: '390',
+					    width: maxWidth,
+		          videoId: songToPlayId
+						});
+					}
+					else {
+						player.cueVideoById(songToPlayId)
+					}
 				}
 
 				function getVideoId(url) {
@@ -338,10 +343,10 @@
 					if (newWidth > maxWidth)
 						newWidth = maxWidth;
 					
-					var player = $('#player');
-					var aspectRatio = player.height / player.width;
+					var p = $('#player');
+					var aspectRatio = p.height / p.width;
 					
-					player.width(newWidth).height(newWidth * aspectRatio);
+					p.width(newWidth).height(newWidth * aspectRatio);
 			  }).resize();
 
 				// Initialize YouTube
