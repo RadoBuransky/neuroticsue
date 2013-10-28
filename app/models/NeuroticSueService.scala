@@ -62,10 +62,10 @@ object NeuroticSueService {
   }
 	
 	// Minimal duration between two checks for the same server
-	private val MinServerDelay = Duration.create(10, TimeUnit.SECONDS)
+	private val MinServerDelay = Duration.create(11, TimeUnit.SECONDS)
 	
 	// Minimal duration between two checks for the same URL
-	private val MinResourceDelay = Duration.create(1, TimeUnit.MINUTES)
+	private val MinResourceDelay = Duration.create(59, TimeUnit.SECONDS)
 	private val ResourceTolerance = MinResourceDelay / 4
 	
 	// Maximal duration between two checks for the same URL
@@ -205,7 +205,10 @@ object NeuroticSueService {
   }
   
   private def isTimeToDie(resource: NeuroticResource): Boolean = {
-    new Period(resource.lastRequested, DateTime.now).getMillis() > TimeToLive.toMillis
+    val p = new Period(resource.lastRequested, DateTime.now).getMillis()
+    Logger.debug("isTimeToDie? [" + resource.lastRequested + ", " + DateTime.now +
+        ", " + p + ", " + TimeToLive.toMillis + "]")
+    p > TimeToLive.toMillis
   }
   
   private def isEligible(lastChecked: Option[DateTime], tolerance: Duration): Boolean = {
