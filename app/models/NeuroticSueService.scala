@@ -39,6 +39,7 @@ import com.ning.http.client.AsyncCompletionHandler
 import scala.concurrent.Promise
 import play.api.libs.ws.Response
 import com.ning.http.client.AsyncHandler.STATE
+import org.joda.time.Interval
 
 case class NeuroticResult(hasChanged: Option[Boolean], baseline: Option[Int], error: Option[String])
 
@@ -127,6 +128,7 @@ object NeuroticSueService {
   def getBaseline(url: URL, remoteAddress: String): Future[NeuroticResult] = {
     require(url != null, "url is required!")
     
+    Logger.info("New page to watch: " + url);    
     Logger.debug("getBaseline(" + url + ", " + remoteAddress + ")");
     
     findResource(url) match {
@@ -205,10 +207,10 @@ object NeuroticSueService {
   }
   
   private def isTimeToDie(resource: NeuroticResource): Boolean = {
-    val p = new Period(resource.lastRequested, DateTime.now).getMillis()
+    val i = new Interval(resource.lastRequested, DateTime.now).toDurationMillis()
     Logger.debug("isTimeToDie? [" + resource.lastRequested + ", " + DateTime.now +
-        ", " + p + ", " + TimeToLive.toMillis + "]")
-    p > TimeToLive.toMillis
+        ", " + i + ", " + TimeToLive.toMillis + "]")
+    i > TimeToLive.toMillis
   }
   
   private def isEligible(lastChecked: Option[DateTime], tolerance: Duration): Boolean = {
