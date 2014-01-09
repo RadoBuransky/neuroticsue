@@ -11,20 +11,21 @@ import play.api.libs.json.JsError
 import models.NeuroticSueService
 import models.NeuroticResult
 import java.net.URLDecoder
+import scala.concurrent.Future
 
 object NeuroticSueController extends Controller {  
   /**
    * GET method to check the URL for any changes compared to the
    * provided baseline. 
    */
-  def check(url: Option[String], baseline: Option[Int] = None) = Action { implicit request =>
-    try {        
+  def check(url: Option[String], baseline: Option[Int] = None) = Action.async { implicit request =>
+    try {
 	    // Validate input
       val validationResult = validate(url, baseline);
 	    
       validationResult match {
         // Return validation error
-      	case Some(validationError) => BadRequest(validationError)
+      	case Some(validationError) => Future(BadRequest(validationError))
 	      
       	// No validation errors
       	case None => {
@@ -33,15 +34,15 @@ object NeuroticSueController extends Controller {
       	  baseline match {
       	    // Check URL for changes
       	    case Some(baseline) => {
-      	      neuroticToResult(NeuroticSueService.hasChanged(parsedUrl, baseline))
+              Future(neuroticToResult(NeuroticSueService.hasChanged(parsedUrl, baseline)))
       	    }
       	    
       	    // This is the first call, so get the baseline
-      	    case None => Async {
+      	    case None => {
       	      NeuroticSueService.getBaseline(parsedUrl, request.remoteAddress) map { neuroticResult =>
       	        neuroticToResult(neuroticResult)
     	        }
-      	    }
+            }
       	  }
       	}
 	    }
@@ -49,7 +50,7 @@ object NeuroticSueController extends Controller {
     catch {
       case ex: Throwable => {
         Logger.error("Oh shit! [" + url + ", " + baseline + "]", ex)
-        BadRequest("Something really bad has happened! Sorry for that.")
+        Future(BadRequest("Something really bad has happened! Sorry for that."))
       }
     }
   }
@@ -60,7 +61,7 @@ object NeuroticSueController extends Controller {
         "error" -> neuroticResult.error)
   }
   
-  private def neuroticToResult(neuroticResult: NeuroticResult): Result = {
+  private def neuroticToResult(neuroticResult: NeuroticResult): SimpleResult = {
     Ok(neuroticResultToJson(neuroticResult))
   }
     

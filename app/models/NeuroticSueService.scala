@@ -325,7 +325,7 @@ object NeuroticSueService {
   private def executeWs(url: URL): Future[Response] = {
       import com.ning.http.client.AsyncCompletionHandler
       var result = Promise[Response]()
-      WS.client.prepareGet(url.toString).execute(new AsyncCompletionHandler[AHCResponse]() {        
+      WS.client.prepareGet(url.toString).execute(new AsyncCompletionHandler[AHCResponse]() {
         var counter: Long = 0
         var aborted: Boolean = false
         
